@@ -5,8 +5,12 @@ import {
    DataObject,
    ObjectUri,
    statuses,
+   Query,
+   Filters,
+   Filter,
+   SortAndLimit,
 } from '@quatrain/core'
-import { AbstractObject, User } from '@quatrain/core/lib/components'
+import { BaseObject, User } from '@quatrain/core/lib/components'
 
 export interface Reference {
    ref: string
@@ -19,18 +23,18 @@ import { getApps, initializeApp } from 'firebase-admin/app'
 
 const { getFirestore, FieldValue } = require('firebase-admin/firestore')
 
-// const operatorsMap: { [x: string]: any } = {
-//    equals: '==',
-//    notEquals: '!=',
-//    greater: '>',
-//    greaterOrEquals: '>=',
-//    lower: '<',
-//    lowerOrEquals: '>',
-//    contains: 'in',
-//    notContains: 'not in',
-//    containsAll: 'array-contains',
-//    containsAny: 'array-contains-any',
-// }
+const operatorsMap: { [x: string]: any } = {
+   equals: '==',
+   notEquals: '!=',
+   greater: '>',
+   greaterOrEquals: '>=',
+   lower: '<',
+   lowerOrEquals: '>',
+   contains: 'in',
+   notContains: 'not in',
+   containsAll: 'array-contains',
+   containsAny: 'array-contains-any',
+}
 
 export class FirestoreAdapter extends AbstractAdapter {
    protected _user: User | ObjectUri | undefined = undefined
@@ -43,14 +47,6 @@ export class FirestoreAdapter extends AbstractAdapter {
          initializeApp(params.config)
       }
    }
-
-   // static getCollection(obj: any) {
-   //    const className = obj.constructor.name
-   //    console.log('className', className)
-   //    return Object.keys(classMap).find(key => {
-   //       return classMap[key].name === className
-   //    })
-   // }
 
    set user(user: User | ObjectUri | undefined) {
       this._user = user
@@ -110,9 +106,7 @@ export class FirestoreAdapter extends AbstractAdapter {
 
          const path = `${fullPath}/${uid}`
 
-         const ref = getFirestore().doc(path)
-
-         await ref.set(data)
+         await getFirestore().doc(path).set(data)
 
          dataObject.uri.path = path
          dataObject.uri.label = Reflect.get(data, 'name')
@@ -153,6 +147,7 @@ export class FirestoreAdapter extends AbstractAdapter {
          const dao = await DataObject.factory(parts[0])
          dao.uri = new ObjectUri(path)
          dao.populate(snapshot.data())
+         dao.uri.label = dao.val('name')
 
          return dao
       }
@@ -209,5 +204,164 @@ export class FirestoreAdapter extends AbstractAdapter {
       await getFirestore().doc(dataObject.path).update(dataObject.toJSON())
 
       return dataObject
+   }
+
+   /**
+    * Execute a query object
+    * @param query Query
+    * @returns Array<DataObject> | Array<T>
+    */
+   async query<T extends BaseObject>(
+      query: Query<T>
+   ): Promise<DataObject[] | T[]> {
+      return await this.find(query.obj.dataObject, query.filters, query.sortAndLimit)
+   }
+
+   async find<T extends BaseObject>(
+      dataObject: DataObject,
+      filters: Filters | Filter[] | undefined = undefined,
+      pagination: SortAndLimit | undefined = undefined
+   ): Promise<DataObject[] | T[]> {
+      let fullPath = ''
+      if (dataObject.path !== ObjectUri.DEFAULT) {
+         fullPath = `${dataObject.path}/`
+      }
+      const collection =
+         dataObject.uri.collection || dataObject.class.constructor.name
+
+      if (!collection) {
+         throw new Error(`Can't find collection matching object to query`)
+      }
+
+      fullPath += collection
+
+      console.log(`[FSA] Query on collection ${fullPath}`)
+
+      let hasFilters = false
+      let query: FirebaseFirestore.Query | FirebaseFirestore.CollectionGroup
+      if (!dataObject.parent) {
+         query = getFirestore().collectionGroup(fullPath)
+      } else {
+         query = getFirestore().collection(fullPath)
+      }
+
+      if (filters instanceof Filters) {
+         hasFilters = true
+      } else if (Array.isArray(filters)) {
+         // list of filters objects
+         filters.forEach((filter) => {
+            if (filter.prop === 'keywords') {
+               filter.operator = 'containsAll'
+               filter.value = String(filter.value).toLowerCase()
+            } else if (!Reflect.has(obj, filter.prop)) {
+               throw new Error(`No such property '${filter.prop}' on object'`)
+            }
+
+            if (BaseReference.prototype.isPrototypeOf(obj[filter.prop])) {
+               // if property holds an instance extending BaseReference...
+               filter.prop += '.ref'
+            }
+
+            const realOperator = operatorsMap[filter.operator]
+
+            query = query.where(filter.prop, realOperator, filter.value)
+            console.log(
+               `filter added: ${filter.prop} ${realOperator} '${filter.value}'`
+            )
+         })
+      }
+
+      // store query before pagination part
+      const baseQuery = query.select()
+
+      if (pagination) {
+         console.debug('pagination data', pagination)
+         pagination.sortings.forEach((sorting: Sorting) => {
+            query = query.orderBy(sorting.prop, sorting.order)
+         })
+         query = query
+            .limit(pagination.limits.batch)
+            .offset(pagination.limits.offset || 0)
+      }
+
+      const snapshot = await query.get()
+
+      if (snapshot.empty) {
+         return { items: [], meta: { count: 0, updatedAt: Date.now() } }
+      }
+
+      const dbutils = await getFirestore().doc(`dbutils/${collection}`).get()
+      const meta: Meta = {
+         count: await this._getPartialCount(fullPath, baseQuery, { filters }),
+         updatedAt: dbutils.get('updatedAt') || Date.now(),
+      }
+
+      if (hasFilters === true) {
+         meta.count = await this._getPartialCount(fullPath, baseQuery, {
+            filters,
+         })
+      }
+
+      const items: Array<any> = []
+
+      snapshot.forEach((doc) => {
+         const { keywords, ...payload } = doc.data()
+         const obj = Reflect.construct(
+            dataObject.class,
+            doc.ref.path,
+            payload,
+            FirestoreAdapter
+         )
+         obj.backend = this
+         items.push(obj)
+      })
+
+      return { items, meta }
+   }
+
+   protected _getPartialCount = async (
+      collection: string,
+      query: FirebaseFirestore.Query,
+      params: any = {}
+   ) => {
+      const queryHash: string = hash.MD5(
+         `${collection}-${JSON.stringify(params.filters)}`
+      )
+
+      const [base, id, subcollection] = collection.split('/')
+      let ref = getFirestore().collection('dbutils').doc(base)
+
+      // create doc if it doens't exist
+      const baseDoc = await ref.get()
+      if (!baseDoc.exists) {
+         await ref.set({ updatedAt: Date.now() })
+      }
+
+      if (id && subcollection) {
+         ref = ref.collection(subcollection).doc(id)
+      }
+
+      ref = ref.collection('counts').doc(queryHash)
+
+      try {
+         const doc = await ref.get()
+         if (doc.exists) {
+            return doc.get('count')
+         } else {
+            // count records matching filters before adding anything else
+            const data = await query.get()
+            await ref.set({
+               count: data.docs.length,
+               createdAt: Date.now(),
+               path: collection,
+               filters: JSON.stringify(params.filters || {}),
+            })
+            return data.docs.length
+         }
+      } catch (err) {
+         console.log(
+            `Unable to get partial count from cache for ${collection}: ${err}`
+         )
+      }
    }
 }
