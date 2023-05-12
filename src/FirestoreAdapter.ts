@@ -1,27 +1,24 @@
 import {
    AbstractAdapter,
+   DataObjectClass,
    BackendParameters,
    BackendError,
-   DataObject,
    ObjectUri,
-   statuses,
-   Query,
    Filters,
    Filter,
    SortAndLimit,
+   Sorting,
+   Core,
 } from '@quatrain/core'
-import { BaseObject, User } from '@quatrain/core/lib/components'
+// do not convert to import as it is not yet supported
+import { getApps, initializeApp } from 'firebase-admin/app'
+import { getFirestore, Query, CollectionGroup } from 'firebase-admin/firestore'
 
 export interface Reference {
    ref: string
    label: string
    [x: string]: any
 }
-
-// do not convert to import as it is not yet supported
-import { getApps, initializeApp } from 'firebase-admin/app'
-
-const { getFirestore, FieldValue } = require('firebase-admin/firestore')
 
 const operatorsMap: { [x: string]: any } = {
    equals: '==',
@@ -37,191 +34,175 @@ const operatorsMap: { [x: string]: any } = {
 }
 
 export class FirestoreAdapter extends AbstractAdapter {
-   protected _user: User | ObjectUri | undefined = undefined
-   protected _mapping: any = {}
-
-   constructor(params: BackendParameters = { injectMeta: false }) {
+   constructor(params: BackendParameters = {}) {
       super(params)
-      this._mapping = params.mapping
       if (getApps().length === 0) {
          initializeApp(params.config)
       }
    }
 
-   set user(user: User | ObjectUri | undefined) {
-      this._user = user
-   }
-
-   get user(): User | ObjectUri | undefined {
-      return this._user
-   }
-
    /**
     * Create record in backend
     * @param dataObject DataObject instance to persist in backend
-    * @param desiredUid Desired UID for new record
     * @returns DataObject
     */
    async create(
-      dataObject: DataObject,
-      desiredUid: string | undefined = undefined
-   ): Promise<DataObject> {
+      dataObject: DataObjectClass<any>
+   ): Promise<DataObjectClass<any>> {
       try {
-         // TODO check that object is not already existing in backend
+         if (dataObject.uid) {
+            throw new BackendError(
+               `Data object has an uid and can't be created`
+            )
+         }
          let fullPath = ''
-         if (dataObject.get('parent')) {
+         if (dataObject.has('parent')) {
             // if data contains a parent, it acts as a base path
             if (!dataObject.get('parent').ref) {
-               throw new Error(
+               throw new BackendError(
                   `DataObject has parent but parent is not persisted`
                )
             }
             fullPath = `${dataObject.get('parent').ref}/`
          }
-         const collection =
-            dataObject.uri.collection || dataObject.class.constructor.name
+
+         const collection = dataObject.uri.collection // || dataObject.uri.class?.name.toLowerCase()
 
          fullPath += collection
 
-         // add meta data
-         if (this._injectMeta && this.user) {
-            dataObject.set('createdAt', Date.now()) // Timestamp.create()
-            dataObject.set(
-               'createdBy',
-               this.user instanceof User ? this.user.asReference() : this.user
-            )
-         }
+         // execute middlewares
+         await this.executeMiddlewares(dataObject)
 
          const data = dataObject.toJSON()
 
-         // remove all properties that have an undefined value
-         Object.keys(dataObject.properties).forEach((key: any) => {
-            if (dataObject.val(key) === undefined) {
-               console.log(`removing undefined property ${key}`)
-               Reflect.deleteProperty(data, key)
-            }
-         })
+         // Add keywords for firestore "full search"
+         data.keywords = this._createKeywords(dataObject)
 
-         const uid = desiredUid || getFirestore().collection(fullPath).doc().id
+         const uid = getFirestore().collection(fullPath).doc().id
 
          const path = `${fullPath}/${uid}`
 
-         await getFirestore().doc(path).set(data)
+         const ref = getFirestore().doc(path)
+         await ref.create(data)
 
          dataObject.uri.path = path
-         dataObject.uri.label = Reflect.get(data, 'name')
+         dataObject.uri.label = data && Reflect.get(data, 'name')
 
-         console.log(
-            `Saved object ${dataObject.class.constructor.name} at path ${path}`
-         )
+         Core.log(`Saved object "${data.name}" at path ${path}`)
 
          return dataObject
       } catch (err) {
          console.log(err)
+         Core.log((err as Error).message)
          throw new BackendError((err as Error).message)
       }
    }
 
-   async read(param: string | DataObject): Promise<DataObject> {
-      const path = param instanceof DataObject ? param.uri.path : param
+   async read(dataObject: DataObjectClass<any>): Promise<DataObjectClass<any>> {
+      const path = dataObject.path
 
       const parts = path.split('/')
       if (parts.length < 2 || parts.length % 2 !== 0) {
-         throw new Error(
+         throw new BackendError(
             `path parts number should be even, received: '${path}'`
          )
       }
 
-      console.log(`[FSA] Getting document ${path}`)
+      Core.log(`[FSA] Getting document ${path}`)
 
       const snapshot = await getFirestore().doc(path).get()
 
       if (!snapshot.exists) {
-         throw Error(`No document matches path '${path}'`)
+         throw new BackendError(`No document matches path '${path}'`)
       }
 
-      if (param instanceof DataObject) {
-         param.populate(snapshot.data())
-         return param
-      } else {
-         const dao = await DataObject.factory(parts[0])
-         dao.uri = new ObjectUri(path)
-         dao.populate(snapshot.data())
-         dao.uri.label = dao.val('name')
+      dataObject.populate(snapshot.data())
 
-         return dao
-      }
+      return dataObject
    }
 
-   async update(dataObject: DataObject): Promise<DataObject> {
+   async update(
+      dataObject: DataObjectClass<any>
+   ): Promise<DataObjectClass<any>> {
       if (dataObject.uid === undefined) {
          throw Error('DataObject has no uid')
       }
-      console.log(`[FSA] updating document ${dataObject.uid}`)
-      if (this._injectMeta && this.user) {
-         dataObject.set('updatedAt', Date.now()) // Timestamp.create())
-         dataObject.set('updatedBy', this.user)
-      }
+      Core.log(`[FSA] updating document ${dataObject.path}`)
+
+      // execute middlewares
+      await this.executeMiddlewares(dataObject)
 
       const { uid, ...data } = dataObject.toJSON()
 
-      // prepare deletion of properties that have an undefined value
-      Object.keys(dataObject.data).forEach((key: any) => {
-         if (
-            Reflect.has(dataObject, key) === true &&
-            Reflect.get(dataObject, key) === undefined
-         ) {
-            Reflect.set(data, key, FieldValue.delete())
-         }
-      })
-
-      Object.keys(data).forEach((key: any) => {
-         if (!key.startsWith('_')) {
-            const prop = Reflect.get(data, key)
-            if (
-               typeof prop === 'object' &&
-               Reflect.has(prop, 'toJSON') === true
-            ) {
-               Reflect.set(data, key, prop.toJSON())
-            }
-         }
-      })
+      // Add keywords for firestore "full search"
+      data.keywords = this._createKeywords(dataObject)
 
       await getFirestore().doc(dataObject.path).update(data)
 
       return dataObject
    }
 
-   async delete(dataObject: DataObject): Promise<DataObject> {
+   async delete(
+      dataObject: DataObjectClass<any>
+   ): Promise<DataObjectClass<any>> {
       if (dataObject.uid === undefined) {
          throw Error('Dataobject has no uid')
       }
-      if (this._injectMeta && this.user) {
-         dataObject.set('deletedAt', Date.now()) // Timestamp.create()
-         dataObject.set('deletedBy', this.user)
-      }
-      dataObject.set('status', statuses.DELETED)
-      await getFirestore().doc(dataObject.path).update(dataObject.toJSON())
+
+      // execute middlewares
+      await this.executeMiddlewares(dataObject)
+
+      //dataObject.set('status', statuses.DELETED)
+      //      await getFirestore().doc(dataObject.path).update(dataObject.toJSON())
+      await getFirestore().doc(dataObject.path).delete()
+
+      dataObject.uri = new ObjectUri()
 
       return dataObject
    }
 
-   /**
-    * Execute a query object
-    * @param query Query
-    * @returns Array<DataObject> | Array<T>
-    */
-   async query<T extends BaseObject>(
-      query: Query<T>
-   ): Promise<DataObject[] | T[]> {
-      return await this.find(query.obj.dataObject, query.filters, query.sortAndLimit)
+   async deleteCollection(collection: string, batchSize = 500): Promise<void> {
+      const collectionRef = getFirestore().collection(collection)
+      const query = collectionRef.orderBy('__name__').limit(batchSize)
+
+      return new Promise((resolve, reject) => {
+         this._deleteQueryBatch(getFirestore(), query, resolve).catch(reject)
+      })
    }
 
-   async find<T extends BaseObject>(
-      dataObject: DataObject,
+   protected async _deleteQueryBatch(
+      db: FirebaseFirestore.Firestore,
+      query: Query,
+      resolve: any
+   ) {
+      const snapshot = await query.get()
+
+      const batchSize = snapshot.size
+      if (batchSize === 0) {
+         // When there are no documents left, we are done
+         resolve()
+         return
+      }
+
+      // Delete documents in a batch
+      const batch = db.batch()
+      snapshot.docs.forEach((doc) => {
+         batch.delete(doc.ref)
+      })
+      await batch.commit()
+
+      // Recurse on the next process tick, to avoid
+      // exploding the stack.
+      process.nextTick(() => {
+         this._deleteQueryBatch(db, query, resolve)
+      })
+   }
+
+   async find(
+      dataObject: DataObjectClass<any>,
       filters: Filters | Filter[] | undefined = undefined,
       pagination: SortAndLimit | undefined = undefined
-   ): Promise<DataObject[] | T[]> {
+   ): Promise<DataObjectClass<any>[]> {
       let fullPath = ''
       if (dataObject.path !== ObjectUri.DEFAULT) {
          fullPath = `${dataObject.path}/`
@@ -230,16 +211,19 @@ export class FirestoreAdapter extends AbstractAdapter {
          dataObject.uri.collection || dataObject.class.constructor.name
 
       if (!collection) {
-         throw new Error(`Can't find collection matching object to query`)
+         throw new BackendError(
+            `Can't find collection matching object to query`
+         )
       }
 
       fullPath += collection
 
-      console.log(`[FSA] Query on collection ${fullPath}`)
+      Core.log(`[FSA] Query on collection ${fullPath}`)
 
       let hasFilters = false
-      let query: FirebaseFirestore.Query | FirebaseFirestore.CollectionGroup
-      if (!dataObject.parent) {
+      let query: Query | CollectionGroup
+      if (false) {
+         // find a way to detect sub collection
          query = getFirestore().collectionGroup(fullPath)
       } else {
          query = getFirestore().collection(fullPath)
@@ -253,26 +237,28 @@ export class FirestoreAdapter extends AbstractAdapter {
             if (filter.prop === 'keywords') {
                filter.operator = 'containsAll'
                filter.value = String(filter.value).toLowerCase()
-            } else if (!Reflect.has(obj, filter.prop)) {
-               throw new Error(`No such property '${filter.prop}' on object'`)
+            } else if (!dataObject.has(filter.prop)) {
+               throw new BackendError(
+                  `No such property '${filter.prop}' on object'`
+               )
             }
 
-            if (BaseReference.prototype.isPrototypeOf(obj[filter.prop])) {
+            const property = dataObject.get(filter.prop)
+
+            if (property.constructor.name === 'ObjectProperty') {
                // if property holds an instance extending BaseReference...
                filter.prop += '.ref'
+               filter.value = filter.value && filter.value.uri.path
             }
 
             const realOperator = operatorsMap[filter.operator]
 
             query = query.where(filter.prop, realOperator, filter.value)
-            console.log(
+            Core.log(
                `filter added: ${filter.prop} ${realOperator} '${filter.value}'`
             )
          })
       }
-
-      // store query before pagination part
-      const baseQuery = query.select()
 
       if (pagination) {
          console.debug('pagination data', pagination)
@@ -286,82 +272,46 @@ export class FirestoreAdapter extends AbstractAdapter {
 
       const snapshot = await query.get()
 
-      if (snapshot.empty) {
-         return { items: [], meta: { count: 0, updatedAt: Date.now() } }
-      }
+      //const dbutils = await getFirestore().doc(`dbutils/${collection}`).get()
+      // const meta: Meta = {
+      //    count: 0, //await this._getPartialCount(fullPath, baseQuery, { filters }),
+      //    updatedAt: dbutils.get('updatedAt') || Date.now(),
+      // }
 
-      const dbutils = await getFirestore().doc(`dbutils/${collection}`).get()
-      const meta: Meta = {
-         count: await this._getPartialCount(fullPath, baseQuery, { filters }),
-         updatedAt: dbutils.get('updatedAt') || Date.now(),
-      }
+      const items: DataObjectClass<any>[] = []
 
-      if (hasFilters === true) {
-         meta.count = await this._getPartialCount(fullPath, baseQuery, {
-            filters,
-         })
-      }
-
-      const items: Array<any> = []
-
-      snapshot.forEach((doc) => {
+      snapshot.docs.forEach(async (doc: any) => {
          const { keywords, ...payload } = doc.data()
-         const obj = Reflect.construct(
-            dataObject.class,
-            doc.ref.path,
-            payload,
-            FirestoreAdapter
-         )
-         obj.backend = this
-         items.push(obj)
+         items.push(await dataObject.clone(payload))
       })
 
-      return { items, meta }
+      return items
    }
 
-   protected _getPartialCount = async (
-      collection: string,
-      query: FirebaseFirestore.Query,
-      params: any = {}
-   ) => {
-      const queryHash: string = hash.MD5(
-         `${collection}-${JSON.stringify(params.filters)}`
-      )
+   protected _createKeywords(dataObject: DataObjectClass<any>): string[] {
+      const keywords: string[] = []
+      Object.keys(dataObject.properties)
+         .filter((key: string) => dataObject.get(key).fullSearch === true)
+         .forEach((key: string) => {
+            const val = dataObject.val(key)
+            if (val) {
+               val.toLowerCase()
+                  .split(' ')
+                  .forEach((word: string) => {
+                     let seq: string = ''
+                     word
+                        .split('')
+                        .splice(0, 15)
+                        .forEach((letter) => {
+                           seq += letter
+                           if (seq.length > 1) {
+                              keywords.push(seq)
+                           }
+                        })
+                  })
+            }
+         })
 
-      const [base, id, subcollection] = collection.split('/')
-      let ref = getFirestore().collection('dbutils').doc(base)
-
-      // create doc if it doens't exist
-      const baseDoc = await ref.get()
-      if (!baseDoc.exists) {
-         await ref.set({ updatedAt: Date.now() })
-      }
-
-      if (id && subcollection) {
-         ref = ref.collection(subcollection).doc(id)
-      }
-
-      ref = ref.collection('counts').doc(queryHash)
-
-      try {
-         const doc = await ref.get()
-         if (doc.exists) {
-            return doc.get('count')
-         } else {
-            // count records matching filters before adding anything else
-            const data = await query.get()
-            await ref.set({
-               count: data.docs.length,
-               createdAt: Date.now(),
-               path: collection,
-               filters: JSON.stringify(params.filters || {}),
-            })
-            return data.docs.length
-         }
-      } catch (err) {
-         console.log(
-            `Unable to get partial count from cache for ${collection}: ${err}`
-         )
-      }
+      return [...new Set(keywords)]
    }
 }
