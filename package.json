@@ -27,7 +27,9 @@
     "typescript": "^4.8.3"
   },
   "scripts": {
-    "test": "clear && tsc && jest --verbose",
+    "pretest": "tsc",
+    "test": "clear && jest --verbose",
+    "test-ci": "jest",
     "build": "tsc --watch",
     "push": "yarn version --patch --no-git-tag-version ; yarn publish --access public",
     "prepublish": "tsc"
