@@ -747,10 +747,10 @@
   resolved "https://registry.yarnpkg.com/@protobufjs/utf8/-/utf8-1.1.0.tgz#a777360b5b39a1a2e5106f8e858f2fd2d060c570"
   integrity sha512-Vvn3zZrhQZkkBE8LSuW3em98c0FwgO4nxzv6OdSxPKJIEKY2bGbHn+mhGIPerzI4twdxaP8/0+06HBpwf345Lw==
 
-"@quatrain/core@^0.3.0":
-  version "0.3.0"
-  resolved "https://registry.yarnpkg.com/@quatrain/core/-/core-0.3.0.tgz#ee19eba40f95e84b2a2e8c5dabf064a5866b0f8c"
-  integrity sha512-Wxx6gy5PqeNbxBeHG9mxQmQh8ldxj3yxlIiu+zf+MC59wY06s3OHz4HCIg6uRN88dnQ3sHDZWBbxtVjVCgEaOg==
+"@quatrain/core@^0.4.3":
+  version "0.4.3"
+  resolved "https://registry.yarnpkg.com/@quatrain/core/-/core-0.4.3.tgz#4c781d8b8d114b0eea9d360924fbd44685e72a1c"
+  integrity sha512-RST5zE9oYcZte1pPupFIPPLi/sttRn1cDrKo0MVDRzVBBYYIUc4Upvi+Lf/x3qtxQN01EPRiLWR/w0hrFXk2kw==
 
 "@sinonjs/commons@^1.7.0":
   version "1.8.6"
