@@ -28,7 +28,7 @@
   },
   "scripts": {
     "pretest": "tsc",
-    "test": "clear && jest --verbose",
+    "test": "clear && firebase emulators:exec 'jest --verbose'",
     "test-ci": "jest",
     "build": "tsc --watch",
     "push": "yarn version --patch --no-git-tag-version ; yarn publish --access public",

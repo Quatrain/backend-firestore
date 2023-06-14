@@ -67,6 +67,6 @@ describe('Firestore CRUD operations', () => {
       // Query all users
       query = User.query()
       res = await query.execute()
-      expect(res.length).toBe(5)
+      expect(res.length).toBe(8)
    })
 })
