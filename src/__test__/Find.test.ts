@@ -25,7 +25,7 @@ describe('Firestore find() operations', () => {
       await entity.set('name', 'Acme Inc').save()
 
       // Query entities
-      User.query()
+      Entity.query()
          .execute()
          .then((res) => expect(res.length).toBe(1))
    })
