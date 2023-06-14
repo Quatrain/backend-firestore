@@ -52,7 +52,7 @@ export class FirestoreAdapter extends AbstractAdapter {
       try {
          if (dataObject.uid) {
             throw new BackendError(
-               `Data object has an uid and can't be created`
+               `Data object already has an uid and can't be created`
             )
          }
          let fullPath = ''
@@ -66,7 +66,7 @@ export class FirestoreAdapter extends AbstractAdapter {
             fullPath = `${dataObject.get('parent').ref}/`
          }
 
-         const collection = dataObject.uri.collection // || dataObject.uri.class?.name.toLowerCase()
+         const collection = this.getCollection(dataObject)
 
          fullPath += collection
 
@@ -146,7 +146,7 @@ export class FirestoreAdapter extends AbstractAdapter {
       dataObject: DataObjectClass<any>
    ): Promise<DataObjectClass<any>> {
       if (dataObject.uid === undefined) {
-         throw Error('Dataobject has no uid')
+         throw new BackendError('Dataobject has no uid')
       }
 
       // execute middlewares
@@ -162,11 +162,13 @@ export class FirestoreAdapter extends AbstractAdapter {
    }
 
    async deleteCollection(collection: string, batchSize = 500): Promise<void> {
+      Core.log(`Deleting all records from collection '${collection}'`)
       const collectionRef = getFirestore().collection(collection)
       const query = collectionRef.orderBy('__name__').limit(batchSize)
 
-      return new Promise((resolve, reject) => {
-         this._deleteQueryBatch(getFirestore(), query, resolve).catch(reject)
+      return new Promise(async (resolve) => {
+         await this._deleteQueryBatch(getFirestore(), query, resolve)
+         resolve()
       })
    }
 
@@ -207,8 +209,7 @@ export class FirestoreAdapter extends AbstractAdapter {
       if (dataObject.path !== ObjectUri.DEFAULT) {
          fullPath = `${dataObject.path}/`
       }
-      const collection =
-         dataObject.uri.collection || dataObject.class.constructor.name
+      const collection = this.getCollection(dataObject)
 
       if (!collection) {
          throw new BackendError(
@@ -218,7 +219,7 @@ export class FirestoreAdapter extends AbstractAdapter {
 
       fullPath += collection
 
-      Core.log(`[FSA] Query on collection ${fullPath}`)
+      Core.log(`[FSA] Query on collection ${collection}`)
 
       let hasFilters = false
       let query: Query | CollectionGroup
@@ -234,9 +235,11 @@ export class FirestoreAdapter extends AbstractAdapter {
       } else if (Array.isArray(filters)) {
          // list of filters objects
          filters.forEach((filter) => {
+            let realProp = filter.prop
+            let realValue = filter.value
             if (filter.prop === 'keywords') {
                filter.operator = 'containsAll'
-               filter.value = String(filter.value).toLowerCase()
+               realValue = String(filter.value).toLowerCase()
             } else if (!dataObject.has(filter.prop)) {
                throw new BackendError(
                   `No such property '${filter.prop}' on object'`
@@ -247,27 +250,28 @@ export class FirestoreAdapter extends AbstractAdapter {
 
             if (property.constructor.name === 'ObjectProperty') {
                // if property holds an instance extending BaseReference...
-               filter.prop += '.ref'
-               filter.value = filter.value && filter.value.uri.path
+               realProp += '.ref'
+               realValue = (filter.value && filter.value.uri?.path) || null
             }
 
             const realOperator = operatorsMap[filter.operator]
 
-            query = query.where(filter.prop, realOperator, filter.value)
-            Core.log(
-               `filter added: ${filter.prop} ${realOperator} '${filter.value}'`
-            )
+            query = query.where(realProp, realOperator, realValue)
+            // Core.log(
+            //    `filter added: ${filter.prop} ${realOperator} '${realValue}'`
+            // )
          })
       }
 
       if (pagination) {
-         console.debug('pagination data', pagination)
+         // console.debug('pagination data', pagination)
          pagination.sortings.forEach((sorting: Sorting) => {
             query = query.orderBy(sorting.prop, sorting.order)
          })
-         query = query
-            .limit(pagination.limits.batch)
-            .offset(pagination.limits.offset || 0)
+         query = query.offset(pagination.limits.offset || 0)
+         if (pagination.limits.batch !== -1) {
+            query = query.limit(pagination.limits.batch)
+         }
       }
 
       const snapshot = await query.get()

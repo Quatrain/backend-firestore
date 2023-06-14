@@ -1,6 +1,6 @@
 {
   "name": "@quatrain/backend-firestore",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "license": "MIT",
   "description": "Backend adapter for Firestore",
   "main": "lib/index.js",
@@ -27,7 +27,7 @@
     "typescript": "^4.8.3"
   },
   "scripts": {
-    "test": "tsc && jest --verbose",
+    "test": "clear && tsc && jest --verbose",
     "build": "tsc --watch",
     "push": "yarn version --patch --no-git-tag-version ; yarn publish --access public",
     "prepublish": "tsc"
