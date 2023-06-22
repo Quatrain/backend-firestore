@@ -1,6 +1,6 @@
 {
   "name": "@quatrain/backend-firestore",
-  "version": "0.3.2",
+  "version": "0.3.4",
   "license": "MIT",
   "description": "Backend adapter for Firestore",
   "main": "lib/index.js",
@@ -11,7 +11,7 @@
   ],
   "author": "Quatrain Développement SAS <developers@quatrain.com>",
   "dependencies": {
-    "@quatrain/core": "^0.4.3",
+    "@quatrain/core": "^0.4.4",
     "firebase-admin": "^11.0.0"
   },
   "devDependencies": {
@@ -32,7 +32,6 @@
     "test": "clear && firebase emulators:exec 'jest -i --verbose'",
     "test-ci": "jest --runInBand",
     "build": "tsc --watch",
-    "push": "yarn version --patch --no-git-tag-version ; yarn publish --access public",
     "prepublish": "tsc"
   }
 }

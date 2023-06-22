@@ -747,7 +747,7 @@
   resolved "https://registry.yarnpkg.com/@protobufjs/utf8/-/utf8-1.1.0.tgz#a777360b5b39a1a2e5106f8e858f2fd2d060c570"
   integrity sha512-Vvn3zZrhQZkkBE8LSuW3em98c0FwgO4nxzv6OdSxPKJIEKY2bGbHn+mhGIPerzI4twdxaP8/0+06HBpwf345Lw==
 
-"@quatrain/core@^0.4.3":
+"@quatrain/core@^0.4.4":
   version "0.4.4"
   resolved "https://registry.yarnpkg.com/@quatrain/core/-/core-0.4.4.tgz#50357f5b0b21c7078f31907e789ada73121cb1db"
   integrity sha512-t1q228pnjPA/L8DBDi94EM9MGjDp109y2+NIzqkr+77IZ/XY5R3yyJKYfhi+/YLL8f5vcO0+44ATCZRillIZcQ==
