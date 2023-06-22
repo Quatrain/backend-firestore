@@ -1,4 +1,4 @@
-import { Core, User, utils } from '@quatrain/core'
+import { Core, DataObject, Entity, User, utils } from '@quatrain/core'
 import { FirestoreAdapter } from '../FirestoreAdapter'
 
 process.env.FIRESTORE_EMULATOR_HOST = '127.0.0.1:8080'
@@ -28,8 +28,20 @@ export const createUser = async () => {
    return user
 }
 
+export const createEntity = async (forcedValues: any = {}) => {
+   const res = await utils.DataGenerator(
+      await Entity.factory(),
+      1,
+      forcedValues
+   )
+
+   //console.log(res)
+
+   return res[0]
+}
+
 export const createUsers = (
    userModel: User,
    qty: number = 5,
    forcedValues: any = {}
-) => utils.DataGenerator(userModel, qty, forcedValues)
+): Promise<DataObject[]> => utils.DataGenerator(userModel, qty, forcedValues)

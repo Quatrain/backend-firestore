@@ -49,53 +49,55 @@ export class FirestoreAdapter extends AbstractAdapter {
    async create(
       dataObject: DataObjectClass<any>
    ): Promise<DataObjectClass<any>> {
-      try {
-         if (dataObject.uid) {
-            throw new BackendError(
-               `Data object already has an uid and can't be created`
-            )
-         }
-         let fullPath = ''
-         if (dataObject.has('parent')) {
-            // if data contains a parent, it acts as a base path
-            if (!dataObject.get('parent').ref) {
+      return new Promise(async (resolve, reject) => {
+         try {
+            if (dataObject.uid) {
                throw new BackendError(
-                  `DataObject has parent but parent is not persisted`
+                  `Data object already has an uid and can't be created`
                )
             }
-            fullPath = `${dataObject.get('parent').ref}/`
+            let fullPath = ''
+            if (dataObject.has('parent')) {
+               // if data contains a parent, it acts as a base path
+               if (!dataObject.get('parent').ref) {
+                  throw new BackendError(
+                     `DataObject has parent but parent is not persisted`
+                  )
+               }
+               fullPath = `${dataObject.get('parent').ref}/`
+            }
+
+            const collection = this.getCollection(dataObject)
+
+            fullPath += collection
+
+            // execute middlewares
+            await this.executeMiddlewares(dataObject)
+
+            const data = dataObject.toJSON(true)
+
+            // Add keywords for firestore "full search"
+            data.keywords = this._createKeywords(dataObject)
+
+            const uid = getFirestore().collection(fullPath).doc().id
+
+            const path = `${fullPath}/${uid}`
+
+            const ref = getFirestore().doc(path)
+            await ref.create(data)
+
+            dataObject.uri.path = path
+            dataObject.uri.label = data && Reflect.get(data, 'name')
+
+            Core.log(`Saved object "${data.name}" at path ${path}`)
+
+            resolve(dataObject)
+         } catch (err) {
+            console.log(err)
+            Core.log((err as Error).message)
+            reject(new BackendError((err as Error).message))
          }
-
-         const collection = this.getCollection(dataObject)
-
-         fullPath += collection
-
-         // execute middlewares
-         await this.executeMiddlewares(dataObject)
-
-         const data = dataObject.toJSON()
-
-         // Add keywords for firestore "full search"
-         data.keywords = this._createKeywords(dataObject)
-
-         const uid = getFirestore().collection(fullPath).doc().id
-
-         const path = `${fullPath}/${uid}`
-
-         const ref = getFirestore().doc(path)
-         await ref.create(data)
-
-         dataObject.uri.path = path
-         dataObject.uri.label = data && Reflect.get(data, 'name')
-
-         Core.log(`Saved object "${data.name}" at path ${path}`)
-
-         return dataObject
-      } catch (err) {
-         console.log(err)
-         Core.log((err as Error).message)
-         throw new BackendError((err as Error).message)
-      }
+      })
    }
 
    async read(dataObject: DataObjectClass<any>): Promise<DataObjectClass<any>> {
@@ -219,7 +221,7 @@ export class FirestoreAdapter extends AbstractAdapter {
 
       fullPath += collection
 
-      Core.log(`[FSA] Query on collection ${collection}`)
+      Core.log(`[FSA] Query on collection '${collection}'`)
 
       let hasFilters = false
       let query: Query | CollectionGroup
@@ -249,17 +251,14 @@ export class FirestoreAdapter extends AbstractAdapter {
             const property = dataObject.get(filter.prop)
 
             if (property.constructor.name === 'ObjectProperty') {
-               // if property holds an instance extending BaseReference...
-               realProp += '.ref'
+               realProp = `${filter.prop}.ref`
                realValue = (filter.value && filter.value.uri?.path) || null
             }
 
             const realOperator = operatorsMap[filter.operator]
 
             query = query.where(realProp, realOperator, realValue)
-            // Core.log(
-            //    `filter added: ${filter.prop} ${realOperator} '${realValue}'`
-            // )
+            Core.log(`filter added: ${realProp} ${realOperator} '${realValue}'`)
          })
       }
 
