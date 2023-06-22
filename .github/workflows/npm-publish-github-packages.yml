@@ -16,6 +16,7 @@ jobs:
            with:
               node-version: 16
          - run: yarn install --frozen-lockfile
+         - run: yarn global add firebase-tools
          - run: firebase emulators:exec --project quatrain-core-firestore-admin-adapter-test 'yarn test-ci'
 
    publish-gpr:
