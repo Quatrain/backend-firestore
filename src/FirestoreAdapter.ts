@@ -10,6 +10,7 @@ import {
    Sorting,
    Core,
 } from '@quatrain/core'
+import { BackendAction } from '@quatrain/core/lib/Backend'
 // do not convert to import as it is not yet supported
 import { getApps, initializeApp } from 'firebase-admin/app'
 import { getFirestore, Query, CollectionGroup } from 'firebase-admin/firestore'
@@ -72,7 +73,7 @@ export class FirestoreAdapter extends AbstractAdapter {
             fullPath += collection
 
             // execute middlewares
-            await this.executeMiddlewares(dataObject)
+            await this.executeMiddlewares(dataObject, BackendAction.CREATE)
 
             const data = dataObject.toJSON(true)
 
@@ -120,6 +121,8 @@ export class FirestoreAdapter extends AbstractAdapter {
 
       dataObject.populate(snapshot.data())
 
+      this.executeMiddlewares(dataObject, BackendAction.READ)
+
       return dataObject
    }
 
@@ -132,7 +135,7 @@ export class FirestoreAdapter extends AbstractAdapter {
       Core.log(`[FSA] updating document ${dataObject.path}`)
 
       // execute middlewares
-      await this.executeMiddlewares(dataObject)
+      await this.executeMiddlewares(dataObject, BackendAction.UPDATE)
 
       const { uid, ...data } = dataObject.toJSON()
 
@@ -152,7 +155,7 @@ export class FirestoreAdapter extends AbstractAdapter {
       }
 
       // execute middlewares
-      await this.executeMiddlewares(dataObject)
+      await this.executeMiddlewares(dataObject, BackendAction.DELETE)
 
       //dataObject.set('status', statuses.DELETED)
       //      await getFirestore().doc(dataObject.path).update(dataObject.toJSON())
@@ -283,10 +286,21 @@ export class FirestoreAdapter extends AbstractAdapter {
 
       const items: DataObjectClass<any>[] = []
 
-      snapshot.docs.forEach(async (doc: any) => {
+      for (const doc of snapshot.docs) {
          const { keywords, ...payload } = doc.data()
-         items.push(await dataObject.clone(payload))
-      })
+
+         const newDataObject: DataObjectClass<any> = await dataObject.clone({
+            ...payload,
+         })
+
+         newDataObject.uri = new ObjectUri(
+            `${this.getCollection(dataObject)}/${doc.id}`,
+            newDataObject.val('name')
+         )
+         this.executeMiddlewares(newDataObject, BackendAction.READ)
+
+         items.push(newDataObject)
+      }
 
       return items
    }
