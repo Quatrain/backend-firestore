@@ -255,7 +255,16 @@ export class FirestoreAdapter extends AbstractAdapter {
 
             if (property.constructor.name === 'ObjectProperty') {
                realProp = `${filter.prop}.ref`
-               realValue = (filter.value && filter.value.uri?.path) || null
+
+               if (filter.value instanceof ObjectUri) {
+                  realValue = filter.value.path
+               } else {
+                  realValue =
+                     (filter.value &&
+                        filter.value.uri &&
+                        filter.value.uri.path) ||
+                     null
+               }
             }
 
             const realOperator = operatorsMap[filter.operator]
