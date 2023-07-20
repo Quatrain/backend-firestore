@@ -5,6 +5,10 @@ on:
       branches:
          - main
 
+permissions:
+   contents: write
+   pull-requests: read
+
 jobs:
    tag-and-release:
       runs-on: ubuntu-latest
@@ -13,3 +17,5 @@ jobs:
       steps:
          - name: Tag/Release on Push Action
            uses: rymndhng/release-on-push-action@v0.27.0
+           with:
+              bump_version_scheme: minor
