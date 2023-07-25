@@ -1,37 +1,37 @@
 {
-  "name": "@quatrain/backend-firestore",
-  "version": "0.3.6",
-  "license": "MIT",
-  "description": "Backend adapter for Firestore",
-  "main": "lib/index.js",
-  "types": "lib/index.d.ts",
-  "files": [
-    "lib/",
-    "README.md"
-  ],
-  "author": "Quatrain Développement SAS <developers@quatrain.com>",
-  "dependencies": {
-    "@quatrain/core": "^0.5.2",
-    "firebase-admin": "^11.0.0"
-  },
-  "devDependencies": {
-    "@faker-js/faker": "^7.6.0",
-    "@firebase/rules-unit-testing": "^2.0.7",
-    "@tsconfig/recommended": "^1.0.1",
-    "@types/jest": "^27.0.3",
-    "jest": "^27.4.7",
-    "jest-node-exports-resolver": "^1.1.6",
-    "jest-serial-runner": "^1.2.1",
-    "trace-unhandled": "^2.0.1",
-    "ts-jest": "^27.1.2",
-    "ts-node": "^10.9.1",
-    "typescript": "^4.8.3"
-  },
-  "scripts": {
-    "pretest": "tsc",
-    "test": "clear && firebase emulators:exec 'jest -i --verbose'",
-    "test-ci": "jest --runInBand",
-    "build": "tsc --watch",
-    "prepublish": "tsc"
-  }
+   "name": "@quatrain/backend-firestore",
+   "version": "0.3.7",
+   "license": "MIT",
+   "description": "Backend adapter for Firestore",
+   "main": "lib/index.js",
+   "types": "lib/index.d.ts",
+   "files": [
+      "lib/",
+      "README.md"
+   ],
+   "author": "Quatrain Développement SAS <developers@quatrain.com>",
+   "dependencies": {
+      "@quatrain/core": "^0.5.2",
+      "firebase-admin": "^11.0.0"
+   },
+   "devDependencies": {
+      "@faker-js/faker": "^7.6.0",
+      "@firebase/rules-unit-testing": "^2.0.7",
+      "@tsconfig/recommended": "^1.0.1",
+      "@types/jest": "^27.0.3",
+      "jest": "^27.4.7",
+      "jest-node-exports-resolver": "^1.1.6",
+      "jest-serial-runner": "^1.2.1",
+      "trace-unhandled": "^2.0.1",
+      "ts-jest": "^27.1.2",
+      "ts-node": "^10.9.1",
+      "typescript": "^4.8.3"
+   },
+   "scripts": {
+      "pretest": "tsc",
+      "test": "clear && firebase emulators:exec 'jest -i --verbose'",
+      "test-ci": "jest --runInBand",
+      "build": "tsc --watch",
+      "prepublish": "tsc"
+   }
 }
