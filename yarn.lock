@@ -747,10 +747,10 @@
   resolved "https://registry.yarnpkg.com/@protobufjs/utf8/-/utf8-1.1.0.tgz#a777360b5b39a1a2e5106f8e858f2fd2d060c570"
   integrity sha512-Vvn3zZrhQZkkBE8LSuW3em98c0FwgO4nxzv6OdSxPKJIEKY2bGbHn+mhGIPerzI4twdxaP8/0+06HBpwf345Lw==
 
-"@quatrain/core@^0.5.2":
-  version "0.5.2"
-  resolved "https://registry.yarnpkg.com/@quatrain/core/-/core-0.5.2.tgz#e528955d9879a2ac2e545480c282479226a61c94"
-  integrity sha512-ig4WfDejPBDZPrDgDbsLxk/sLVOfbm4nTEsKy+7LYOtG6qlYl8Xtn9no0Pndj0hoXAqif7JicZ7SQ1tvQt4QIg==
+"@quatrain/core@^0.5.3":
+  version "0.5.3"
+  resolved "https://registry.yarnpkg.com/@quatrain/core/-/core-0.5.3.tgz#337e8b33b47cadc6b3a5eef6ae8ad70c8b5c0cfa"
+  integrity sha512-Zw9qiUn9RDKLwPeR/sXOB9FgaLEWfKN8Da58ui/UJwHhNUuGOPjXGBh1VizwMqBJ13axrAO5wI9aqF+marVwRA==
   dependencies:
     "@faker-js/faker" "^7.6.0"
 
