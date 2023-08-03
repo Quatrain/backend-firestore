@@ -48,7 +48,8 @@ export class FirestoreAdapter extends AbstractAdapter {
     * @returns DataObject
     */
    async create(
-      dataObject: DataObjectClass<any>
+      dataObject: DataObjectClass<any>,
+      uid?: string
    ): Promise<DataObjectClass<any>> {
       return new Promise(async (resolve, reject) => {
          try {
@@ -80,9 +81,9 @@ export class FirestoreAdapter extends AbstractAdapter {
             // Add keywords for firestore "full search"
             data.keywords = this._createKeywords(dataObject)
 
-            const uid = getFirestore().collection(fullPath).doc().id
+            const id = uid || getFirestore().collection(fullPath).doc().id
 
-            const path = `${fullPath}/${uid}`
+            const path = `${fullPath}/${id}`
 
             const ref = getFirestore().doc(path)
             await ref.create(data)
