@@ -61,12 +61,17 @@ export class FirestoreAdapter extends AbstractAdapter {
             let fullPath = ''
             if (dataObject.has('parent')) {
                // if data contains a parent, it acts as a base path
-               if (!dataObject.get('parent').ref) {
+               if (
+                  !(
+                     dataObject.get('parent')._value &&
+                     dataObject.get('parent')._value._path
+                  )
+               ) {
                   throw new BackendError(
                      `DataObject has parent but parent is not persisted`
                   )
                }
-               fullPath = `${dataObject.get('parent').ref}/`
+               fullPath = `${dataObject.get('parent')._value._path}/`
             }
 
             const collection = this.getCollection(dataObject)
