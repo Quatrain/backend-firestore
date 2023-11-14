@@ -234,8 +234,7 @@ export class FirestoreAdapter extends AbstractAdapter {
 
       let hasFilters = false
       let query: Query | CollectionGroup
-      if (false) {
-         // find a way to detect sub collection
+      if (dataObject.has('parent')) {
          query = getFirestore().collectionGroup(fullPath)
       } else {
          query = getFirestore().collection(fullPath)
