@@ -308,19 +308,19 @@ export class FirestoreAdapter extends AbstractAdapter {
          })
 
          let newDataObjectUri = ``
-         if (dataObject.has('parent')) {
+         if (newDataObject.has('parent')) {
             // if data contains a parent, it acts as a base path
             if (
                !(
-                  dataObject.get('parent')._value &&
-                  dataObject.get('parent')._value._path
+                  newDataObject.get('parent')._value &&
+                  newDataObject.get('parent')._value._path
                )
             ) {
                throw new BackendError(
                   `DataObject has parent but parent is not persisted`
                )
             }
-            fullPath = `${dataObject.get('parent')._value._path}/`
+            fullPath = `${newDataObject.get('parent')._value._path}/`
          }
 
          newDataObjectUri += `${this.getCollection(dataObject)}/${doc.id}`
