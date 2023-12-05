@@ -138,7 +138,26 @@ export class FirestoreAdapter extends AbstractAdapter {
       if (dataObject.uid === undefined) {
          throw Error('DataObject has no uid')
       }
-      Core.log(`[FSA] updating document ${dataObject.path}`)
+      let fullPath = ''
+
+      if (dataObject.has('parent')) {
+         // if data contains a parent, it acts as a base path
+         if (
+            !(
+               dataObject.get('parent')._value &&
+               dataObject.get('parent')._value._path
+            )
+         ) {
+            throw new BackendError(
+               `DataObject has parent but parent is not persisted`
+            )
+         }
+         fullPath = `${dataObject.get('parent')._value._path}/`
+      }
+
+      fullPath += dataObject.path
+
+      Core.log(`[FSA] updating document ${fullPath}`)
 
       // execute middlewares
       await this.executeMiddlewares(dataObject, BackendAction.UPDATE)
@@ -148,7 +167,7 @@ export class FirestoreAdapter extends AbstractAdapter {
       // Add keywords for firestore "full search"
       data.keywords = this._createKeywords(dataObject)
 
-      await getFirestore().doc(dataObject.path).update(data)
+      await getFirestore().doc(fullPath).update(data)
 
       return dataObject
    }
