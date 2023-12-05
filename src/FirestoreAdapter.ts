@@ -320,7 +320,7 @@ export class FirestoreAdapter extends AbstractAdapter {
                   `DataObject has parent but parent is not persisted`
                )
             }
-            fullPath = `${newDataObject.get('parent')._value._path}/`
+            newDataObjectUri = `${newDataObject.get('parent')._value._path}/`
          }
 
          newDataObjectUri += `${this.getCollection(dataObject)}/${doc.id}`
