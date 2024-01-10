@@ -282,6 +282,8 @@ export class FirestoreAdapter extends AbstractAdapter {
 
                if (filter.value instanceof ObjectUri) {
                   realValue = filter.value.path
+               } else if (Array.isArray(filter.value)) {
+                  realValue = filter.value.map((v) => v.path)
                } else {
                   realValue =
                      (filter.value &&
