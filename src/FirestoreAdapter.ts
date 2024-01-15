@@ -9,6 +9,7 @@ import {
    SortAndLimit,
    Sorting,
    Core,
+   NotFoundError,
 } from '@quatrain/core'
 import { BackendAction } from '@quatrain/core/lib/Backend'
 // do not convert to import as it is not yet supported
@@ -122,7 +123,7 @@ export class FirestoreAdapter extends AbstractAdapter {
       const snapshot = await getFirestore().doc(path).get()
 
       if (!snapshot.exists) {
-         throw new BackendError(`No document matches path '${path}'`)
+         throw new NotFoundError(`No document matches path '${path}'`)
       }
 
       dataObject.populate(snapshot.data())
