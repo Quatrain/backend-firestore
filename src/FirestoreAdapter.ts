@@ -1,6 +1,7 @@
 import {
    AbstractAdapter,
    DataObjectClass,
+   BackendAction,
    BackendParameters,
    BackendError,
    ObjectUri,
@@ -11,9 +12,8 @@ import {
    SortAndLimit,
    Sorting,
    Core,
-   statuses,
+   NotFoundError,
 } from '@quatrain/core'
-import { BackendAction } from '@quatrain/core/lib/Backend'
 
 // do not convert to import as it is not yet supported
 import { getApps, initializeApp } from 'firebase-admin/app'
@@ -70,12 +70,17 @@ export class FirestoreAdapter extends AbstractAdapter {
             let fullPath = ''
             if (dataObject.has('parent')) {
                // if data contains a parent, it acts as a base path
-               if (!dataObject.get('parent').ref) {
+               if (
+                  !(
+                     dataObject.get('parent')._value &&
+                     dataObject.get('parent')._value._path
+                  )
+               ) {
                   throw new BackendError(
                      `DataObject has parent but parent is not persisted`
                   )
                }
-               fullPath = `${dataObject.get('parent').ref}/`
+               fullPath = `${dataObject.get('parent')._value._path}/`
             }
 
             const collection = this.getCollection(dataObject)
@@ -124,7 +129,7 @@ export class FirestoreAdapter extends AbstractAdapter {
       const snapshot = await getFirestore().doc(path).get()
 
       if (!snapshot.exists) {
-         throw new BackendError(`No document matches path '${path}'`)
+         throw new NotFoundError(`No document matches path '${path}'`)
       }
 
       dataObject.populate(snapshot.data())
@@ -140,7 +145,26 @@ export class FirestoreAdapter extends AbstractAdapter {
       if (dataObject.uid === undefined) {
          throw Error('DataObject has no uid')
       }
-      Core.log(`[FSA] updating document ${dataObject.path}`)
+      let fullPath = ''
+
+      if (dataObject.has('parent')) {
+         // if data contains a parent, it acts as a base path
+         if (
+            !(
+               dataObject.get('parent')._value &&
+               dataObject.get('parent')._value._path
+            )
+         ) {
+            throw new BackendError(
+               `DataObject has parent but parent is not persisted`
+            )
+         }
+         fullPath = `${dataObject.get('parent')._value._path}/`
+      }
+
+      fullPath += dataObject.path
+
+      Core.log(`[FSA] updating document ${fullPath}`)
 
       // execute middlewares
       await this.executeMiddlewares(dataObject, BackendAction.UPDATE)
@@ -243,9 +267,8 @@ export class FirestoreAdapter extends AbstractAdapter {
 
       let hasFilters = false
       let query: Query | CollectionGroup
-      if (false) {
-         // find a way to detect sub collection
-         query = getFirestore().collectionGroup(fullPath)
+      if (dataObject.has('parent')) {
+         query = getFirestore().collectionGroup(collection)
       } else {
          query = getFirestore().collection(fullPath)
       }
@@ -324,8 +347,26 @@ export class FirestoreAdapter extends AbstractAdapter {
             ...payload,
          })
 
+         let newDataObjectUri = ``
+         if (newDataObject.has('parent')) {
+            // if data contains a parent, it acts as a base path
+            if (
+               !(
+                  newDataObject.get('parent')._value &&
+                  newDataObject.get('parent')._value._path
+               )
+            ) {
+               throw new BackendError(
+                  `DataObject has parent but parent is not persisted`
+               )
+            }
+            newDataObjectUri = `${newDataObject.get('parent')._value._path}/`
+         }
+
+         newDataObjectUri += `${this.getCollection(dataObject)}/${doc.id}`
+
          newDataObject.uri = new ObjectUri(
-            `${this.getCollection(dataObject)}/${doc.id}`,
+            newDataObjectUri,
             newDataObject.val('name')
          )
          this.executeMiddlewares(newDataObject, BackendAction.READ)
