@@ -4,16 +4,25 @@ import {
    BackendParameters,
    BackendError,
    ObjectUri,
+   QueryMetaType,
+   QueryResultType,
    Filters,
    Filter,
    SortAndLimit,
    Sorting,
    Core,
+   statuses,
 } from '@quatrain/core'
 import { BackendAction } from '@quatrain/core/lib/Backend'
+
 // do not convert to import as it is not yet supported
 import { getApps, initializeApp } from 'firebase-admin/app'
-import { getFirestore, Query, CollectionGroup } from 'firebase-admin/firestore'
+import {
+   getFirestore,
+   Query,
+   CollectionGroup,
+   WhereFilterOp,
+} from 'firebase-admin/firestore'
 
 export interface Reference {
    ref: string
@@ -21,7 +30,7 @@ export interface Reference {
    [x: string]: any
 }
 
-const operatorsMap: { [x: string]: any } = {
+const operatorsMap: { [x: string]: WhereFilterOp } = {
    equals: '==',
    notEquals: '!=',
    greater: '>',
@@ -29,7 +38,7 @@ const operatorsMap: { [x: string]: any } = {
    lower: '<',
    lowerOrEquals: '>',
    contains: 'in',
-   notContains: 'not in',
+   notContains: 'not-in',
    containsAll: 'array-contains',
    containsAny: 'array-contains-any',
 }
@@ -48,7 +57,8 @@ export class FirestoreAdapter extends AbstractAdapter {
     * @returns DataObject
     */
    async create(
-      dataObject: DataObjectClass<any>
+      dataObject: DataObjectClass<any>,
+      desiredUid: string | undefined
    ): Promise<DataObjectClass<any>> {
       return new Promise(async (resolve, reject) => {
          try {
@@ -77,10 +87,8 @@ export class FirestoreAdapter extends AbstractAdapter {
 
             const data = dataObject.toJSON(true)
 
-            // Add keywords for firestore "full search"
-            data.keywords = this._createKeywords(dataObject)
-
-            const uid = getFirestore().collection(fullPath).doc().id
+            const uid =
+               desiredUid || getFirestore().collection(fullPath).doc().id
 
             const path = `${fullPath}/${uid}`
 
@@ -139,9 +147,6 @@ export class FirestoreAdapter extends AbstractAdapter {
 
       const { uid, ...data } = dataObject.toJSON()
 
-      // Add keywords for firestore "full search"
-      data.keywords = this._createKeywords(dataObject)
-
       await getFirestore().doc(dataObject.path).update(data)
 
       return dataObject
@@ -157,9 +162,12 @@ export class FirestoreAdapter extends AbstractAdapter {
       // execute middlewares
       await this.executeMiddlewares(dataObject, BackendAction.DELETE)
 
-      //dataObject.set('status', statuses.DELETED)
-      //      await getFirestore().doc(dataObject.path).update(dataObject.toJSON())
-      await getFirestore().doc(dataObject.path).delete()
+      if (this._params.softDelete === true) {
+         dataObject.set('status', statuses.DELETED)
+         await getFirestore().doc(dataObject.path).update(dataObject.toJSON())
+      } else {
+         await getFirestore().doc(dataObject.path).delete()
+      }
 
       dataObject.uri = new ObjectUri()
 
@@ -205,11 +213,18 @@ export class FirestoreAdapter extends AbstractAdapter {
       })
    }
 
+   /**
+    * Execute a query on a collection
+    * @param dataObject
+    * @param filters
+    * @param pagination
+    * @returns
+    */
    async find(
       dataObject: DataObjectClass<any>,
       filters: Filters | Filter[] | undefined = undefined,
       pagination: SortAndLimit | undefined = undefined
-   ): Promise<DataObjectClass<any>[]> {
+   ): Promise<QueryResultType<DataObjectClass<any>>> {
       let fullPath = ''
       if (dataObject.path !== ObjectUri.DEFAULT) {
          fullPath = `${dataObject.path}/`
@@ -241,41 +256,46 @@ export class FirestoreAdapter extends AbstractAdapter {
          // list of filters objects
          filters.forEach((filter) => {
             let realProp = filter.prop
+            let realOperator: WhereFilterOp
             let realValue = filter.value
+
+            // Process text search firestore-mode
             if (filter.prop === 'keywords') {
-               filter.operator = 'containsAll'
+               console.log(filter)
+               realOperator = operatorsMap['containsAll']
                realValue = String(filter.value).toLowerCase()
             } else if (!dataObject.has(filter.prop)) {
                throw new BackendError(
                   `No such property '${filter.prop}' on object'`
                )
-            }
+            } else {
+               const property = dataObject.get(filter.prop)
 
-            const property = dataObject.get(filter.prop)
+               if (property.constructor.name === 'ObjectProperty') {
+                  realProp = `${filter.prop}.ref`
 
-            if (property.constructor.name === 'ObjectProperty') {
-               realProp = `${filter.prop}.ref`
-
-               if (filter.value instanceof ObjectUri) {
-                  realValue = filter.value.path
-               } else {
-                  realValue =
-                     (filter.value &&
-                        filter.value.uri &&
-                        filter.value.uri.path) ||
-                     null
+                  if (filter.value instanceof ObjectUri) {
+                     realValue = filter.value.path
+                  } else {
+                     realValue =
+                        (filter.value &&
+                           filter.value.uri &&
+                           filter.value.uri.path) ||
+                        filter.value
+                  }
                }
+
+               realOperator = operatorsMap[filter.operator]
             }
-
-            const realOperator = operatorsMap[filter.operator]
-
             query = query.where(realProp, realOperator, realValue)
-            Core.log(`filter added: ${realProp} ${realOperator} '${realValue}'`)
+
+            Core.log(`filter added: ${realProp} ${realOperator} ${realValue}`)
          })
       }
 
+      const countSnapshot = await query.count().get()
+
       if (pagination) {
-         // console.debug('pagination data', pagination)
          pagination.sortings.forEach((sorting: Sorting) => {
             query = query.orderBy(sorting.prop, sorting.order)
          })
@@ -287,11 +307,13 @@ export class FirestoreAdapter extends AbstractAdapter {
 
       const snapshot = await query.get()
 
-      //const dbutils = await getFirestore().doc(`dbutils/${collection}`).get()
-      // const meta: Meta = {
-      //    count: 0, //await this._getPartialCount(fullPath, baseQuery, { filters }),
-      //    updatedAt: dbutils.get('updatedAt') || Date.now(),
-      // }
+      const meta: QueryMetaType = {
+         count: countSnapshot.data().count,
+         offset: pagination?.limits.offset || 0,
+         batch: pagination?.limits.batch || 20,
+         sortField: pagination?.sortings[0].prop,
+         executionTime: Core.timestamp(),
+      }
 
       const items: DataObjectClass<any>[] = []
 
@@ -311,33 +333,6 @@ export class FirestoreAdapter extends AbstractAdapter {
          items.push(newDataObject)
       }
 
-      return items
-   }
-
-   protected _createKeywords(dataObject: DataObjectClass<any>): string[] {
-      const keywords: string[] = []
-      Object.keys(dataObject.properties)
-         .filter((key: string) => dataObject.get(key).fullSearch === true)
-         .forEach((key: string) => {
-            const val = dataObject.val(key)
-            if (val) {
-               val.toLowerCase()
-                  .split(' ')
-                  .forEach((word: string) => {
-                     let seq: string = ''
-                     word
-                        .split('')
-                        .splice(0, 15)
-                        .forEach((letter) => {
-                           seq += letter
-                           if (seq.length > 1) {
-                              keywords.push(seq)
-                           }
-                        })
-                  })
-            }
-         })
-
-      return [...new Set(keywords)]
+      return { items, meta }
    }
 }
